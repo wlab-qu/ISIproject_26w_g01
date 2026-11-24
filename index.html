@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#204d45">
+  <title>生業選択と気候リスク｜学習用シミュレーション v0.2</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="model.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <p class="eyebrow">水文学 × 考古学｜教育用試作版 v0.2</p>
+      <h1>生業を選び、<br>未来のリスクと向き合う。</h1>
+      <p class="lead">架空の先史社会の集落で、生業と水田への投資を世代ごとに選びます。気候の未来は見えません。過去の経験をもとに、250年間の変化を考えてください。</p>
+      <p class="disclaimer">縄文・弥生社会の再現ではありません。数値はすべて仮想的な教育用設定です。</p>
+    </div>
+  </header>
+  <main class="wrap">
+    <div class="progress" id="progress" aria-live="polite">ゲーム開始前</div>
+    <section id="setup" class="panel">
+      <div class="section-head"><span class="step">01</span><div><h2>集落を始める</h2><p>はじめに設定するのは試行を再現するための条件だけです。</p></div></div>
+      <div class="setup-grid">
+        <label>乱数シード <span class="hint">空欄でランダム生成</span><input type="text" id="seed" placeholder="例：jomon-001" maxlength="80" autocomplete="off"></label>
+        <label>世代の長さ <select id="generation"><option value="10">10年</option><option value="25" selected>25年</option><option value="50">50年</option></select></label>
+        <label>計算期間 <select id="years"><option value="100">100年</option><option value="250" selected>250年</option><option value="500">500年</option></select></label>
+        <label>開始前の気候履歴 <select id="history"><option value="25">25年</option><option value="50" selected>50年</option></select></label>
+      </div>
+      <p class="fine">通常プレイは定常気候。乾燥化・湿潤化の実験はプレイ終了後に利用できます。未来の降水量は表示しません。</p>
+      <button type="button" id="startBtn" class="primary">ゲームを始める <span aria-hidden="true">→</span></button>
+    </section>
+    <section id="play" hidden>
+      <section class="panel">
+        <div class="section-head"><span class="step">02</span><div><h2 id="generationTitle">次の世代の選択</h2><p id="generationDesc"></p></div></div>
+        <h3>これまでに経験した気候</h3>
+        <div id="rainChart" class="plot" role="img" aria-label="これまでに経験した年降水量と生育期降水量"></div>
+        <p class="fine">年降水量・生育期降水量は、それぞれの平年値を1とした値です。負の年は開始前に伝わる「過去の経験」を表します。将来値は表示されません。</p>
+        <h3>集落の現在の状態</h3>
+        <div id="currentStats" class="stats-grid"></div>
+      </section>
+      <section class="panel">
+        <div class="section-head"><span class="step">03</span><div><h2>次の世代の生業を決める</h2><p>この割合は、次の意思決定時点まで維持されます。</p></div></div>
+        <div class="range-group">
+          <label for="huntRange">狩猟・採集 <strong id="huntValue">40%</strong></label>
+          <input id="huntRange" type="range" min="0" max="100" step="5" value="40">
+          <label for="fishRange">漁労 <strong id="fishValue">40%</strong></label>
+          <input id="fishRange" type="range" min="0" max="100" step="5" value="40">
+          <div class="calculated"><span>水田稲作 <small>残りを自動配分</small></span><strong id="riceValue">20%</strong></div>
+          <div class="stacked" id="allocationBar" aria-label="生業配分"></div>
+        </div>
+        <div class="investment">
+          <label for="investRange">稲作労働力のうち、水田整備・維持に使う割合 <strong id="investValue">20%</strong></label>
+          <input id="investRange" type="range" min="0" max="100" step="5" value="20">
+          <p id="laborNote" class="fine"></p>
+        </div>
+        <div class="decision-footer">
+          <div class="decision-buttons">
+            <button type="button" id="nextBtn" class="primary">この選択で次の世代へ <span aria-hidden="true">→</span></button>
+            <button type="button" id="finishBtn" class="secondary">この設定で最後まで進める <span aria-hidden="true">»</span></button>
+          </div>
+          <p class="decision-hint">後者では現在の生業配分と水田投資率を残りの全世代に固定して計算します。途中での再選択はできませんが、終了後に再プレイできます。未来の気候は表示されません。</p>
+        </div>
+      </section>
+      <section class="panel" id="resultsDuring">
+        <h2>これまでの集落の歩み</h2>
+        <div id="timeline" class="plot"></div>
+        <div id="stockChart" class="plot"></div>
+        <div id="fieldChart" class="plot"></div>
+        <div id="foodChart" class="plot"></div>
+        <p class="fine">4つのグラフは異なる単位を使用しています。「食料不足の年数」は必要な食料を少しでも満たせなかった年を数えます。深刻さは最大不足率も確認してください。</p>
+        <div id="generationLog" class="generation-log"></div>
+      </section>
+    </section>
+    <section id="done" class="panel" hidden>
+      <div class="section-head"><span class="step">04</span><div><h2>250年後、どうなったか</h2><p>一つの指標だけで「成功」を判断しないでください。</p></div></div>
+      <div id="summaryStats" class="stats-grid"></div>
+      <h3>同じ意思決定を、別の気候条件で検証する</h3>
+      <p class="fine">各世代の生業選択をそのまま固定して、同じ乱数シードで「定常」「乾燥化」「湿潤化」を比較します。これは結果を見た後に行う追加実験であり、各シナリオに適応して選び直すゲームではありません。</p>
+      <button id="compareBtn" type="button" class="secondary">3つの気候条件で比較する</button>
+      <div id="comparison" hidden></div>
+      <div class="actions"><button type="button" id="exportBtn" class="secondary">年次データをCSV保存</button><button type="button" id="replayBtn" class="secondary">同じシードでもう一度</button><button type="button" id="randomBtn" class="primary">新しい気候で遊ぶ</button></div>
+      <h3>振り返りの問い</h3>
+      <div class="questions"><p>① どの指標を重視すると、今回の戦略は望ましいと言えるでしょうか。</p><p>② 別の気候系列でも、同じ選択が望ましいと言えるでしょうか。</p><p>③ このモデルにない社会的要因や考古学的な証拠には何があるでしょうか。</p></div>
+    </section>
+    <details class="panel model-note" id="modelDetails">
+      <summary>モデルの仕組み・仮定を見る</summary>
+      <div class="model-body">
+        <p>計算は毎年実施します。3種類の生業への労働力配分と、水田整備への投資割合のみを世代ごとに選びます。状態変数は人口 <em>N</em>、食料備蓄 <em>S</em>、水田基盤 <em>K</em> です。</p>
+        <div class="equation">Hᵢ,t = Yᵢ × fᵢ(P) × εᵢ,t × Lᵢ,t / (1 + Lᵢ,t / Bᵢ,t)</div>
+        <p>食料生産は労働力が増えるにつれて逓減し、少雨・多雨の両方で収量が減少します。稲作は年降水量に加え、生育期降水量に強く依存します。</p>
+        <div class="equation">K(t+1) = clip[(1−δ)K(t) + α I(t)(1−K(t)/Kmax)]</div>
+        <p>水田整備の労働力 I は当年の稲作収穫には利用できません。整備によって稲作の生産可能規模 B = B₀ + β K が増えます。</p>
+        <div class="equation">A(t) = (1−λ) S(t) + Σ Hᵢ,t<br>q(t) = min(1, A(t) / [c N(t)])</div>
+        <div class="equation">N(t+1) = N(t) [1 + r q(t) − m (1−q(t))]</div>
+        <div class="equation">S(t+1) = min[Smax, max(0, A(t) − c N(t))]</div>
+        <p>人口は食料充足率で増減します。食料備蓄には保存損失と容量上限があります。気候・生業固有の乱数は選択と独立に生成し、同じシードで再現できます。</p>
+        <p><strong>モデルの重要な限界：</strong>社会制度・交易・移住・儀礼・年齢構成・資源の枯渇回復・生業別保存性を表現していません。数式とパラメータは学習用の仮定であり、歴史的実証ではありません。降水量の数値記録が先史社会に存在したことを意味しません。</p>
+        <p class="fine">全パラメータと計算手順は付属の <code>model.js</code> と <code>MODEL_SPEC.md</code> を参照してください。</p>
+      </div>
+    </details>
+  </main>
+  <footer class="wrap"><p>生業選択と気候リスク｜水文学・考古学の共同授業用プロトタイプ／教育用の仮想モデル</p></footer>
+</body>
+</html>
