@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#204d45">
-  <title>生業選択と気候リスク｜学習用シミュレーション v0.2</title>
+  <title>生業選択と気候リスク｜学習用シミュレーション v0.3</title>
   <link rel="stylesheet" href="style.css">
   <script defer src="model.js"></script>
   <script defer src="app.js"></script>
@@ -12,7 +12,7 @@
 <body>
   <header class="hero">
     <div class="wrap">
-      <p class="eyebrow">project for ISI｜試作版 v0.2</p>
+      <p class="eyebrow">水文学 × 考古学｜教育用試作版 v0.3</p>
       <h1>生業を選び、<br>未来のリスクと向き合う。</h1>
       <p class="lead">架空の先史社会の集落で、生業と水田への投資を世代ごとに選びます。気候の未来は見えません。過去の経験をもとに、250年間の変化を考えてください。</p>
       <p class="disclaimer">縄文・弥生社会の再現ではありません。数値はすべて仮想的な教育用設定です。</p>
@@ -87,17 +87,402 @@
     <details class="panel model-note" id="modelDetails">
       <summary>モデルの仕組み・仮定を見る</summary>
       <div class="model-body">
-        <p>計算は毎年実施します。3種類の生業への労働力配分と、水田整備への投資割合のみを世代ごとに選びます。状態変数は人口 <em>N</em>、食料備蓄 <em>S</em>、水田基盤 <em>K</em> です。</p>
-        <div class="equation">Hᵢ,t = Yᵢ × fᵢ(P) × εᵢ,t × Lᵢ,t / (1 + Lᵢ,t / Bᵢ,t)</div>
-        <p>食料生産は労働力が増えるにつれて逓減し、少雨・多雨の両方で収量が減少します。稲作は年降水量に加え、生育期降水量に強く依存します。</p>
-        <div class="equation">K(t+1) = clip[(1−δ)K(t) + α I(t)(1−K(t)/Kmax)]</div>
-        <p>水田整備の労働力 I は当年の稲作収穫には利用できません。整備によって稲作の生産可能規模 B = B₀ + β K が増えます。</p>
-        <div class="equation">A(t) = (1−λ) S(t) + Σ Hᵢ,t<br>q(t) = min(1, A(t) / [c N(t)])</div>
-        <div class="equation">N(t+1) = N(t) [1 + r q(t) − m (1−q(t))]</div>
-        <div class="equation">S(t+1) = min[Smax, max(0, A(t) − c N(t))]</div>
-        <p>人口は食料充足率で増減します。食料備蓄には保存損失と容量上限があります。気候・生業固有の乱数は選択と独立に生成し、同じシードで再現できます。</p>
-        <p><strong>モデルの重要な限界：</strong>社会制度・交易・移住・儀礼・年齢構成・資源の枯渇回復・生業別保存性を表現していません。数式とパラメータは学習用の仮定であり、歴史的実証ではありません。降水量の数値記録が先史社会に存在したことを意味しません。</p>
-        <p class="fine">全パラメータと計算手順は付属の <code>model.js</code> と <code>MODEL_SPEC.md</code> を参照してください。</p>
+<div class="model-guide-intro"><p><strong>このパネルだけでモデルの全体像と計算式を確認できます。</strong> 数式はブラウザの標準機能で描画するため、外部ライブラリや通信は不要です。横幅の大きい数式や表は左右にスクロールできます。</p></div>
+<nav class="model-toc" aria-label="モデル説明の目次"><a href="#model-section-1">概要・計算順序</a><a href="#model-section-2">変数</a><a href="#model-section-3">生産関数</a><a href="#model-section-4">水田投資</a><a href="#model-section-5">備蓄・人口</a><a href="#model-section-6">気候・乱数</a><a href="#model-section-7">パラメータ</a><a href="#model-section-8">評価指標</a><a href="#model-section-9">モデルの限界</a><a href="#model-section-10">参考文献</a></nav>
+<article class="model-doc" aria-labelledby="model-guide-title">
+<h2 class="model-title" id="model-guide-title">数理モデルの仕組みと仮定</h2>
+<p>このゲームは、<strong>架空の先史社会の集落</strong>について、気候の変動、生業選択、水田への投資、食料備蓄、人口の相互作用を考えるための<strong>教育用システムダイナミクスモデル</strong>です。縄文・弥生時代の実際の人口や生産力を推定・再現するものではありません。数値・関数形は授業用の仮定であり、特定の生業や社会の優劣を示しません。</p>
+<h3 id="model-section-1">1. ゲームは何を表現しているか</h3>
+<p>学生は、狩猟・採集、漁労、水田稲作に労働力を配分し、さらに稲作労働力の一部を水田の整備・維持に使う割合を決めます。<strong>収穫量が変わると食料備蓄と人口が変わり、人口が変わると翌年の労働力と食料需要も変わります。</strong>
+水田の整備も翌年以降の生産能力を変えるため、過去の選択が将来に影響します。</p>
+<ul>
+<li><strong>時間刻み</strong>：内部計算は1年ごと。意思決定は初期設定で25年（10年・50年にも変更可）ごと。</li>
+<li><strong>シミュレーション期間</strong>：初期設定250年（100年・500年に変更可）。</li>
+<li><strong>気候の情報</strong>：初回は開始前50年（25年にも変更可）の気候履歴を示し、途中は<strong>すでに経験した年だけ</strong>を表示。未来の降水量は見せません。</li>
+<li><strong>初期の3生業</strong>：すべて最初から選択できます。水田の整備・維持は稲作労働力から差し引きます。</li>
+<li><strong>選択の固定</strong>：「次の世代へ」は一世代のみ、「最後まで進める」は現在の配分を残りの全期間に固定します。</li>
+</ul>
+<h4 id="毎年の計算順序">毎年の計算順序</h4>
+<ol type="1">
+<li>あらかじめシードから生成した、その年の年降水量・生育期降水量・生業ごとの収量変動を取得する。</li>
+<li><strong>年初人口</strong>から3生業の労働力を計算し、稲作への投資労働力を差し引く。</li>
+<li>降水条件、生業固有の収量変動、労働力の逓減、現在の水田基盤から食料生産量を求める。</li>
+<li>備蓄の保存損失と当年の生産を加味し、食料需要、不足量、翌年の備蓄を求める。</li>
+<li>食料充足率から<strong>翌年の人口</strong>を計算する。</li>
+<li>投資と自然劣化から<strong>翌年の水田基盤</strong>を計算する。</li>
+</ol>
+<h3 id="model-section-2">2. 記号・状態変数・意思決定</h3>
+<div aria-label="表（横方向にスクロールできます）" class="model-table-wrap" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">記号</th>
+<th style="text-align: left;">意味</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>t</mi><annotation encoding="application/x-tex">t</annotation></semantics></math></td>
+<td style="text-align: left;">年。添字
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>t</mi><annotation encoding="application/x-tex">t</annotation></semantics></math>
+はその年の年初またはその年の量を示す</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>N</mi><mi>t</mi></msub><annotation encoding="application/x-tex">N_t</annotation></semantics></math></td>
+<td style="text-align: left;">年初の人口（人）</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>S</mi><mi>t</mi></msub><annotation encoding="application/x-tex">S_t</annotation></semantics></math></td>
+<td style="text-align: left;">年初の備蓄食料（共通の食料単位）</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>K</mi><mi>t</mi></msub><annotation encoding="application/x-tex">K_t</annotation></semantics></math></td>
+<td style="text-align: left;">年初の水田生産基盤（仮想的な指標）</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>a</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">a_{i,t}</annotation></semantics></math></td>
+<td style="text-align: left;">生業
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">i</annotation></semantics></math>
+への労働力の配分割合（3生業の合計は1）</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>u</mi><mi>t</mi></msub><annotation encoding="application/x-tex">u_t</annotation></semantics></math></td>
+<td style="text-align: left;">稲作に配分した労働力のうち、水田整備・維持に使う割合</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>t</mi></msub><mo>,</mo><mspace width="0.222em"></mspace><msub><mi>P</mi><mrow><mi>g</mi><mo>,</mo><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">P_t,\ P_{g,t}</annotation></semantics></math></td>
+<td style="text-align: left;">それぞれ年降水量比・生育期降水量比（各平年値を1）</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>H</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">H_{i,t}</annotation></semantics></math></td>
+<td style="text-align: left;">生業
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">i</annotation></semantics></math>
+の年間食料生産量</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>I</mi><mi>t</mi></msub><annotation encoding="application/x-tex">I_t</annotation></semantics></math></td>
+<td style="text-align: left;">当年の水田整備・維持への労働力</td>
+</tr>
+</tbody>
+</table></div>
+<p>添字
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">i</annotation></semantics></math>
+は、狩猟・採集（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>h</mi><annotation encoding="application/x-tex">h</annotation></semantics></math>）、漁労（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>f</mi><annotation encoding="application/x-tex">f</annotation></semantics></math>）、水田稲作（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>）のいずれかです。労働力は人口に比例し、年齢構成などによる差は考えません。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mrow><mi>h</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>+</mo><msub><mi>a</mi><mrow><mi>f</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>+</mo><msub><mi>a</mi><mrow><mi>r</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">
+a_{h,t}+a_{f,t}+a_{r,t}=1
+</annotation></semantics></math></div>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mtable><mtr><mtd columnalign="right" style="text-align: right"><msub><mi>L</mi><mrow><mi>h</mi><mo>,</mo><mi>t</mi></mrow></msub></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><msub><mi>N</mi><mi>t</mi></msub><msub><mi>a</mi><mrow><mi>h</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>,</mo></mtd><mtd columnalign="right" style="text-align: right"><msub><mi>L</mi><mrow><mi>f</mi><mo>,</mo><mi>t</mi></mrow></msub></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><msub><mi>N</mi><mi>t</mi></msub><msub><mi>a</mi><mrow><mi>f</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>,</mo></mtd></mtr><mtr><mtd columnalign="right" style="text-align: right"><msub><mi>L</mi><mrow><mi>r</mi><mo>,</mo><mi>t</mi></mrow></msub></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><msub><mi>N</mi><mi>t</mi></msub><msub><mi>a</mi><mrow><mi>r</mi><mo>,</mo><mi>t</mi></mrow></msub><mrow><mo form="prefix" stretchy="true">(</mo><mn>1</mn><mo>−</mo><msub><mi>u</mi><mi>t</mi></msub><mo form="postfix" stretchy="true">)</mo></mrow><mo>,</mo></mtd><mtd columnalign="right" style="text-align: right"><msub><mi>I</mi><mi>t</mi></msub></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><msub><mi>N</mi><mi>t</mi></msub><msub><mi>a</mi><mrow><mi>r</mi><mo>,</mo><mi>t</mi></mrow></msub><msub><mi>u</mi><mi>t</mi></msub></mtd></mtr></mtable><annotation encoding="application/x-tex">
+\begin{aligned}
+L_{h,t}&amp;=N_t a_{h,t}, &amp; L_{f,t}&amp;=N_t a_{f,t},\\
+L_{r,t}&amp;=N_t a_{r,t}(1-u_t), &amp; I_t&amp;=N_t a_{r,t}u_t
+\end{aligned}
+</annotation></semantics></math></div>
+<p>例えば稲作に人口相当労働力の50%を割り当て、そのうち20%を水田整備に使うと、全体の40%が当年の稲作生産、10%が水田整備・維持に使われます。</p>
+<h3 id="model-section-3">3. 生業別の食料生産と資源制約</h3>
+<p>各生業の食料生産量は次式で求めます。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>=</mo><msub><mi>Y</mi><mi>i</mi></msub><mspace width="0.167em"></mspace><msub><mi>f</mi><mi>i</mi></msub><mrow><mo form="prefix" stretchy="true">(</mo><msub><mi>P</mi><mi>t</mi></msub><mo>,</mo><msub><mi>P</mi><mrow><mi>g</mi><mo>,</mo><mi>t</mi></mrow></msub><mo form="postfix" stretchy="true">)</mo></mrow><mspace width="0.167em"></mspace><msub><mi>ε</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><mspace width="0.167em"></mspace><mfrac><msub><mi>L</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><mrow><mn>1</mn><mo>+</mo><msub><mi>L</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><mi>/</mi><msub><mi>B</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub></mrow></mfrac></mrow><annotation encoding="application/x-tex">
+H_{i,t}=Y_i\,f_i(P_t,P_{g,t})\,\varepsilon_{i,t}\,
+\frac{L_{i,t}}{1+L_{i,t}/B_{i,t}}
+</annotation></semantics></math></div>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>Y</mi><mi>i</mi></msub><annotation encoding="application/x-tex">Y_i</annotation></semantics></math>：生業ごとの基準生産性（単位労働力当たりの食料生産）。</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>f</mi><mi>i</mi></msub><annotation encoding="application/x-tex">f_i</annotation></semantics></math>：降水条件が生産に与える影響（0〜1）。少雨・多雨のいずれでも減産する山型の応答。</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>ε</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">\varepsilon_{i,t}</annotation></semantics></math>：降水以外による、生業固有の収量変動（平均1の正の乱数）。</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>L</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">L_{i,t}</annotation></semantics></math>：実際に生産へ投入した労働力。稲作は整備分を除きます。</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>B</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">B_{i,t}</annotation></semantics></math>：労働力投入の効率が低下する程度を決める<strong>能力制約</strong>。</li>
+</ul>
+<p><strong>逓減の意味</strong>：労働力を増やすと総生産は増えますが、分母の
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>+</mo><mi>L</mi><mi>/</mi><mi>B</mi></mrow><annotation encoding="application/x-tex">1+L/B</annotation></semantics></math>
+も大きくなり、追加の労働力による収量の増加が小さくなります。資源や利用可能な土地が有限であることを簡略に表しています。</p>
+<p>能力制約の初期設定は、狩猟・採集と漁労では一定、水田稲作では整備した基盤に応じて変わります。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>B</mi><mrow><mi>h</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>=</mo><mn>65</mn><mo>,</mo><mspace width="2.0em"></mspace><msub><mi>B</mi><mrow><mi>f</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>=</mo><mn>70</mn><mo>,</mo><mspace width="2.0em"></mspace><msub><mi>B</mi><mrow><mi>r</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>=</mo><mn>20</mn><mo>+</mo><mn>1.5</mn><msub><mi>K</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">
+B_{h,t}=65,\qquad B_{f,t}=70,\qquad B_{r,t}=20+1.5K_t
+</annotation></semantics></math></div>
+<h4 id="降水量と生産性の関係">降水量と生産性の関係</h4>
+<p>平年値を1とした降水量比を使い、生業ごとに異なる最適値と応答幅を設定します。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mtable><mtr><mtd columnalign="right" style="text-align: right"><msub><mi>f</mi><mi>h</mi></msub><mrow><mo form="prefix" stretchy="true">(</mo><msub><mi>P</mi><mi>t</mi></msub><mo form="postfix" stretchy="true">)</mo></mrow></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><mo>exp</mo><mrow><mo form="prefix" stretchy="true">[</mo><mi>−</mi><mfrac><mn>1</mn><mn>2</mn></mfrac><msup><mrow><mo form="prefix" stretchy="true">(</mo><mfrac><mrow><msub><mi>P</mi><mi>t</mi></msub><mo>−</mo><mn>1.00</mn></mrow><mn>0.68</mn></mfrac><mo form="postfix" stretchy="true">)</mo></mrow><mn>2</mn></msup><mo form="postfix" stretchy="true">]</mo></mrow><mo>,</mo></mtd></mtr><mtr><mtd columnalign="right" style="text-align: right"><msub><mi>f</mi><mi>f</mi></msub><mrow><mo form="prefix" stretchy="true">(</mo><msub><mi>P</mi><mi>t</mi></msub><mo form="postfix" stretchy="true">)</mo></mrow></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><mo>exp</mo><mrow><mo form="prefix" stretchy="true">[</mo><mi>−</mi><mfrac><mn>1</mn><mn>2</mn></mfrac><msup><mrow><mo form="prefix" stretchy="true">(</mo><mfrac><mrow><msub><mi>P</mi><mi>t</mi></msub><mo>−</mo><mn>1.10</mn></mrow><mn>0.65</mn></mfrac><mo form="postfix" stretchy="true">)</mo></mrow><mn>2</mn></msup><mo form="postfix" stretchy="true">]</mo></mrow></mtd></mtr></mtable><annotation encoding="application/x-tex">
+\begin{aligned}
+f_h(P_t)&amp;=\exp\left[-\frac12\left(\frac{P_t-1.00}{0.68}\right)^2\right],\\[3pt]
+f_f(P_t)&amp;=\exp\left[-\frac12\left(\frac{P_t-1.10}{0.65}\right)^2\right]
+\end{aligned}
+</annotation></semantics></math></div>
+<p>稲作は年降水量だけでなく、<strong>生育期降水量をより強く重視</strong>します。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mi>r</mi></msub><mrow><mo form="prefix" stretchy="true">(</mo><msub><mi>P</mi><mi>t</mi></msub><mo>,</mo><msub><mi>P</mi><mrow><mi>g</mi><mo>,</mo><mi>t</mi></mrow></msub><mo form="postfix" stretchy="true">)</mo></mrow><mo>=</mo><mo>exp</mo><mrow><mo form="prefix" stretchy="true">[</mo><mi>−</mi><mfrac><mn>1</mn><mn>2</mn></mfrac><mrow><mo form="prefix" stretchy="true">{</mo><mn>0.20</mn><msup><mrow><mo form="prefix" stretchy="true">(</mo><mfrac><mrow><msub><mi>P</mi><mi>t</mi></msub><mo>−</mo><mn>1</mn></mrow><mn>0.75</mn></mfrac><mo form="postfix" stretchy="true">)</mo></mrow><mn>2</mn></msup><mo>+</mo><mn>0.80</mn><msup><mrow><mo form="prefix" stretchy="true">(</mo><mfrac><mrow><msub><mi>P</mi><mrow><mi>g</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>−</mo><mn>1</mn></mrow><mn>0.36</mn></mfrac><mo form="postfix" stretchy="true">)</mo></mrow><mn>2</mn></msup><mo form="postfix" stretchy="true">}</mo></mrow><mo form="postfix" stretchy="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+f_r(P_t,P_{g,t})=\exp\left[-\frac12\left\{
+0.20\left(\frac{P_t-1}{0.75}\right)^2+
+0.80\left(\frac{P_{g,t}-1}{0.36}\right)^2
+\right\}\right]
+</annotation></semantics></math></div>
+<p>各式は、降水量が最適値から離れるほど食料生産が下がるという仮定です。<strong>現実の漁労・狩猟採集・稲作の収量を経験的に再現する式ではありません。</strong>
+実際の生業には雨量以外の自然条件と社会的な仕組みも重要です。</p>
+<h3 id="model-section-4">4.
+水田への投資と長期的な生産基盤</h3>
+<p>水田整備への労働力
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>I</mi><mi>t</mi></msub><annotation encoding="application/x-tex">I_t</annotation></semantics></math>
+は当年の稲作生産に使えませんが、水田基盤
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>K</mi><mi>t</mi></msub><annotation encoding="application/x-tex">K_t</annotation></semantics></math>
+を増やします。既存の基盤は毎年一定割合だけ劣化し、上限に近づくほど投資の効果も小さくなると仮定します。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>K</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><mo>clip</mo><mrow><mo form="prefix" stretchy="true">[</mo><mrow><mo form="prefix" stretchy="true">(</mo><mn>1</mn><mo>−</mo><mi>δ</mi><mo form="postfix" stretchy="true">)</mo></mrow><msub><mi>K</mi><mi>t</mi></msub><mo>+</mo><mi>α</mi><msub><mi>I</mi><mi>t</mi></msub><mrow><mo form="prefix" stretchy="true">(</mo><mn>1</mn><mo>−</mo><mfrac><msub><mi>K</mi><mi>t</mi></msub><msub><mi>K</mi><mo>max</mo></msub></mfrac><mo form="postfix" stretchy="true">)</mo></mrow><mo>,</mo><mspace width="0.222em"></mspace><mn>0</mn><mo>,</mo><mspace width="0.222em"></mspace><msub><mi>K</mi><mo>max</mo></msub><mo form="postfix" stretchy="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+K_{t+1}=\operatorname{clip}\left[
+(1-\delta)K_t+\alpha I_t\left(1-\frac{K_t}{K_{\max}}\right),\ 0,\ K_{\max}\right]
+</annotation></semantics></math></div>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>δ</mi><annotation encoding="application/x-tex">\delta</annotation></semantics></math>：水田基盤の年間劣化率（初期設定2.5%）。</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>α</mi><annotation encoding="application/x-tex">\alpha</annotation></semantics></math>：労働力による水田整備の効率（初期設定0.18）。</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>K</mi><mo>max</mo></msub><annotation encoding="application/x-tex">K_{\max}</annotation></semantics></math>：水田基盤の上限（初期設定200）。</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>clip</mo><mrow><mo form="prefix" stretchy="true">(</mo><mi>x</mi><mo>,</mo><mn>0</mn><mo>,</mo><mi>M</mi><mo form="postfix" stretchy="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">\operatorname{clip}(x,0,M)</annotation></semantics></math>：計算結果を0以上、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>M</mi><annotation encoding="application/x-tex">M</annotation></semantics></math>
+以下に制限する操作。</li>
+</ul>
+<p>ここでいう「投資」は新規整備と維持管理を一体化したものです。<strong>水田への投資が当面の食料を減らす一方で、将来の生産可能規模を広げる</strong>という時間的なトレードオフを学習するための設定です。</p>
+<h3 id="model-section-5">5. 食料の消費・備蓄と人口変動</h3>
+<p>毎年の食料需要は人口に比例するとし、保存損失後の備蓄と当年の生産を合計して利用可能食料を求めます。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mtable><mtr><mtd columnalign="right" style="text-align: right"><msub><mi>C</mi><mi>t</mi></msub></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><mi>c</mi><msub><mi>N</mi><mi>t</mi></msub><mo>,</mo></mtd></mtr><mtr><mtd columnalign="right" style="text-align: right"><msub><mi>A</mi><mi>t</mi></msub></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><mrow><mo form="prefix" stretchy="true">(</mo><mn>1</mn><mo>−</mo><mi>λ</mi><mo form="postfix" stretchy="true">)</mo></mrow><msub><mi>S</mi><mi>t</mi></msub><mo>+</mo><munder><mo>∑</mo><mi>i</mi></munder><msub><mi>H</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>,</mo></mtd></mtr><mtr><mtd columnalign="right" style="text-align: right"><msub><mi>D</mi><mi>t</mi></msub></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><mo>max</mo><mrow><mo form="prefix" stretchy="true">(</mo><mn>0</mn><mo>,</mo><msub><mi>C</mi><mi>t</mi></msub><mo>−</mo><msub><mi>A</mi><mi>t</mi></msub><mo form="postfix" stretchy="true">)</mo></mrow></mtd></mtr></mtable><annotation encoding="application/x-tex">
+\begin{aligned}
+C_t&amp;=cN_t,\\
+A_t&amp;=(1-\lambda)S_t+\sum_i H_{i,t},\\
+D_t&amp;=\max(0,C_t-A_t)
+\end{aligned}
+</annotation></semantics></math></div>
+<p>ここで
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>t</mi></msub><annotation encoding="application/x-tex">C_t</annotation></semantics></math>
+は必要な食料量、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>c</mi><annotation encoding="application/x-tex">c</annotation></semantics></math>
+は1人当たり年間食料需要、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>A</mi><mi>t</mi></msub><annotation encoding="application/x-tex">A_t</annotation></semantics></math>
+は利用可能食料量、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>λ</mi><annotation encoding="application/x-tex">\lambda</annotation></semantics></math>
+は保存損失率、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>D</mi><mi>t</mi></msub><annotation encoding="application/x-tex">D_t</annotation></semantics></math>
+は食料不足量です。</p>
+<p>食料充足率
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>q</mi><mi>t</mi></msub><annotation encoding="application/x-tex">q_t</annotation></semantics></math>
+は0〜1とし、不足のない年は1とします。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>q</mi><mi>t</mi></msub><mo>=</mo><mrow><mo form="prefix" stretchy="true">{</mo><mtable><mtr><mtd columnalign="left" style="text-align: left"><mo>min</mo><mrow><mo form="prefix" stretchy="true">(</mo><mn>1</mn><mo>,</mo><mfrac displaystyle="true"><msub><mi>A</mi><mi>t</mi></msub><msub><mi>C</mi><mi>t</mi></msub></mfrac><mo form="postfix" stretchy="true">)</mo></mrow></mtd><mtd columnalign="left" style="text-align: left"><mrow><mo form="prefix" stretchy="true">(</mo><msub><mi>C</mi><mi>t</mi></msub><mo>&gt;</mo><mn>0</mn><mo form="postfix" stretchy="true">)</mo></mrow><mo>,</mo></mtd></mtr><mtr><mtd columnalign="left" style="text-align: left"><mn>1</mn></mtd><mtd columnalign="left" style="text-align: left"><mrow><mo form="prefix" stretchy="true">(</mo><msub><mi>C</mi><mi>t</mi></msub><mo>=</mo><mn>0</mn><mo form="postfix" stretchy="true">)</mo></mrow></mtd></mtr></mtable></mrow></mrow><annotation encoding="application/x-tex">
+q_t=\begin{cases}
+\min\left(1,\dfrac{A_t}{C_t}\right)&amp;(C_t&gt;0),\\[4pt]
+1&amp;(C_t=0)
+\end{cases}
+</annotation></semantics></math></div>
+<p>翌年の備蓄は余剰食料のうち容量上限まで保存します。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>S</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><mo>min</mo><mrow><mo form="prefix" stretchy="true">[</mo><msub><mi>S</mi><mo>max</mo></msub><mo>,</mo><mspace width="0.222em"></mspace><mo>max</mo><mrow><mo form="prefix" stretchy="true">(</mo><mn>0</mn><mo>,</mo><msub><mi>A</mi><mi>t</mi></msub><mo>−</mo><msub><mi>C</mi><mi>t</mi></msub><mo form="postfix" stretchy="true">)</mo></mrow><mo form="postfix" stretchy="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+S_{t+1}=\min\left[S_{\max},\ \max(0,A_t-C_t)\right]
+</annotation></semantics></math></div>
+<p>翌年人口は、食料が十分な場合の増加と、食料不足の影響を合わせて求めます。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>N</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><msub><mi>N</mi><mi>t</mi></msub><mrow><mo form="prefix" stretchy="true">[</mo><mn>1</mn><mo>+</mo><mi>r</mi><msub><mi>q</mi><mi>t</mi></msub><mo>−</mo><mi>m</mi><mrow><mo form="prefix" stretchy="true">(</mo><mn>1</mn><mo>−</mo><msub><mi>q</mi><mi>t</mi></msub><mo form="postfix" stretchy="true">)</mo></mrow><mo form="postfix" stretchy="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">
+N_{t+1}=N_t\left[1+r q_t-m(1-q_t)\right]
+</annotation></semantics></math></div>
+<ul>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>：食料充足時の年間純人口増加係数（初期設定0.012）。</li>
+<li><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>m</mi><annotation encoding="application/x-tex">m</annotation></semantics></math>：食料不足が人口を減らす影響の強さ（初期設定0.09）。</li>
+</ul>
+<p>これは出生・死亡・移住を区別しない<strong>集落人口の純変化モデル</strong>です。翌年の計算人口が1人未満になった場合は、数値計算上、人口0（集落消滅）とします。人口0の集落が自然回復する仕組みはありません。</p>
+<p><strong>重要な注意</strong>：人口が食料供給量に追随して増えるため、この式では食料不足が軽微でも頻発する場合があります。「不足した年数」だけでなく「10%以上の不足年数」「最大不足率」も表示します。</p>
+<h3 id="model-section-6">6. 降水量・収量の確率的な生成</h3>
+<p>降水量は実測データではなく、<strong>乱数シードによって再現可能な仮想系列</strong>です。年降水量と生育期降水量は独立には生成せず、年降水量から生育期分を作ります。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mtable><mtr><mtd columnalign="right" style="text-align: right"><msub><mi>P</mi><mi>t</mi></msub></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><mo>exp</mo><mrow><mo form="prefix" stretchy="true">(</mo><msub><mi>σ</mi><mi>P</mi></msub><msub><mi>Z</mi><mrow><mi>P</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>−</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><msubsup><mi>σ</mi><mi>P</mi><mn>2</mn></msubsup><mo form="postfix" stretchy="true">)</mo></mrow><msub><mi>T</mi><mi>t</mi></msub><mo>,</mo></mtd></mtr><mtr><mtd columnalign="right" style="text-align: right"><msub><mi>w</mi><mi>t</mi></msub></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><mo>clip</mo><mrow><mo form="prefix" stretchy="true">(</mo><mn>0.55</mn><mo>+</mo><mn>0.115</mn><msub><mi>Z</mi><mrow><mi>s</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>,</mo><mspace width="0.222em"></mspace><mn>0.22</mn><mo>,</mo><mspace width="0.222em"></mspace><mn>0.83</mn><mo form="postfix" stretchy="true">)</mo></mrow><mo>,</mo></mtd></mtr><mtr><mtd columnalign="right" style="text-align: right"><msub><mi>P</mi><mrow><mi>g</mi><mo>,</mo><mi>t</mi></mrow></msub></mtd><mtd columnalign="left" style="text-align: left"><mo>=</mo><msub><mi>P</mi><mi>t</mi></msub><mfrac><msub><mi>w</mi><mi>t</mi></msub><mn>0.55</mn></mfrac></mtd></mtr></mtable><annotation encoding="application/x-tex">
+\begin{aligned}
+P_t&amp;=\exp\left(\sigma_P Z_{P,t}-\frac12\sigma_P^2\right)T_t,\\
+w_t&amp;=\operatorname{clip}(0.55+0.115Z_{s,t},\ 0.22,\ 0.83),\\
+P_{g,t}&amp;=P_t\frac{w_t}{0.55}
+\end{aligned}
+</annotation></semantics></math></div>
+<p><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>Z</mi><mrow><mi>P</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>,</mo><msub><mi>Z</mi><mrow><mi>s</mi><mo>,</mo><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">Z_{P,t},Z_{s,t}</annotation></semantics></math>
+はそれぞれ標準正規乱数、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>σ</mi><mi>P</mi></msub><mo>=</mo><mn>0.27</mn></mrow><annotation encoding="application/x-tex">\sigma_P=0.27</annotation></semantics></math>
+です。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>w</mi><mi>t</mi></msub><annotation encoding="application/x-tex">w_t</annotation></semantics></math>
+は年降水量のうち生育期に降る割合です。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>P</mi><mrow><mi>g</mi><mo>,</mo><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">P_{g,t}</annotation></semantics></math>
+は<strong>生育期の平年値を1とした比</strong>なので、年降水量比
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>P</mi><mi>t</mi></msub><annotation encoding="application/x-tex">P_t</annotation></semantics></math>
+と値が異なります。</p>
+<p>生業固有の収量変動は、平均が約1となる対数正規乱数で表します。</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ε</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>=</mo><mo>exp</mo><mrow><mo form="prefix" stretchy="true">(</mo><msub><mi>σ</mi><mi>i</mi></msub><msub><mi>Z</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>−</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><msubsup><mi>σ</mi><mi>i</mi><mn>2</mn></msubsup><mo form="postfix" stretchy="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\varepsilon_{i,t}=\exp\left(\sigma_i Z_{i,t}-\frac12\sigma_i^2\right)
+</annotation></semantics></math></div>
+<p><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mi>i</mi></msub><annotation encoding="application/x-tex">\sigma_i</annotation></semantics></math>
+は順に狩猟・採集0.12、漁労0.16、水田稲作0.14。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>Z</mi><mrow><mi>i</mi><mo>,</mo><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">Z_{i,t}</annotation></semantics></math>
+は生業ごとに独立に生成します。ただし生業は共通の降水量の影響を受けるため、<strong>最終的な生産量が完全に独立するという意味ではありません</strong>。</p>
+<h4 id="定常気候乾燥化湿潤化">定常気候・乾燥化・湿潤化</h4>
+<ul>
+<li><strong>定常気候</strong>：年降水量の確率分布の水準を長期にわたり変えません。ただし年々の少雨・多雨は起こります。</li>
+<li><strong>乾燥化・湿潤化</strong>：途中から年降水量の平均水準に線形の変化を加えます。250年ゲームでは100年目以降、終盤に向けて約30%の減少／増加を仮定します。</li>
+<li>100年・500年の場合、変化の開始年は計算期間に応じて調整されます（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>t</mi><mi>s</mi></msub><mo>=</mo><mo>min</mo><mrow><mo form="prefix" stretchy="true">(</mo><mn>100</mn><mo>,</mo><mo form="prefix" stretchy="false">⌊</mo><mn>0.4</mn><mi>T</mi><mo form="postfix" stretchy="false">⌋</mo><mo form="postfix" stretchy="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">t_s=\min(100,\lfloor0.4T\rfloor)</annotation></semantics></math>）。</li>
+</ul>
+<p>具体的には、ゲーム期間
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>T</mi><annotation encoding="application/x-tex">T</annotation></semantics></math>
+年、気候変化の開始年
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>t</mi><mi>s</mi></msub><annotation encoding="application/x-tex">t_s</annotation></semantics></math>、方向
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mo>∈</mo><mo form="prefix" stretchy="false">{</mo><mi>−</mi><mn>1</mn><mo>,</mo><mn>0</mn><mo>,</mo><mi>+</mi><mn>1</mn><mo form="postfix" stretchy="false">}</mo></mrow><annotation encoding="application/x-tex">d\in\{-1,0,+1\}</annotation></semantics></math>（乾燥化・定常・湿潤化）に対して、</p>
+<div aria-label="数式（横方向にスクロールできます）" class="math-display" tabindex="0"><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>T</mi><mi>t</mi></msub><mo>=</mo><mn>1</mn><mo>+</mo><mn>0.30</mn><mi>d</mi><mspace width="0.167em"></mspace><mo>clip</mo><mrow><mo form="prefix" stretchy="true">(</mo><mfrac><mrow><mi>t</mi><mo>−</mo><msub><mi>t</mi><mi>s</mi></msub></mrow><mrow><mi>T</mi><mo>−</mo><msub><mi>t</mi><mi>s</mi></msub></mrow></mfrac><mo>,</mo><mspace width="0.222em"></mspace><mn>0</mn><mo>,</mo><mspace width="0.222em"></mspace><mn>1</mn><mo form="postfix" stretchy="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+T_t=1+0.30d\,\operatorname{clip}\left(\frac{t-t_s}{T-t_s},\ 0,\ 1\right)
+</annotation></semantics></math></div>
+<p>とします（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mo>=</mo><mn>0</mn><mo>,</mo><mi>…</mi><mo>,</mo><mi>T</mi><mo>−</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">t=0,\ldots,T-1</annotation></semantics></math>
+なので、最終年の倍率は設定上の±30%に近い値になります）。</p>
+<p><strong>プレイ中に未来の気候は表示されません。</strong>
+気候シナリオを切り替えるのはゲーム完了後の比較実験です。その際は同じ意思決定列とシードを使用し、気候だけを変えます。気候・収量の乱数列は意思決定と独立に事前生成されるため、同じシードで比較できます。</p>
+<h3 id="model-section-7">7.
+初期設定とパラメータ（いずれも仮値）</h3>
+<div aria-label="表（横方向にスクロールできます）" class="model-table-wrap" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">項目</th>
+<th style="text-align: right;">初期値</th>
+<th style="text-align: left;">意味・単位</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">初期人口
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>N</mi><mn>0</mn></msub><annotation encoding="application/x-tex">N_0</annotation></semantics></math></td>
+<td style="text-align: right;">100</td>
+<td style="text-align: left;">人</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">初期備蓄
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>S</mi><mn>0</mn></msub><annotation encoding="application/x-tex">S_0</annotation></semantics></math></td>
+<td style="text-align: right;">100</td>
+<td style="text-align: left;">食料単位</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">初期水田基盤
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>K</mi><mn>0</mn></msub><annotation encoding="application/x-tex">K_0</annotation></semantics></math></td>
+<td style="text-align: right;">25</td>
+<td style="text-align: left;">仮想指標</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">年間食料需要
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>c</mi><annotation encoding="application/x-tex">c</annotation></semantics></math></td>
+<td style="text-align: right;">1.25</td>
+<td style="text-align: left;">食料単位／人／年</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">備蓄上限
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>S</mi><mo>max</mo></msub><annotation encoding="application/x-tex">S_{\max}</annotation></semantics></math></td>
+<td style="text-align: right;">250</td>
+<td style="text-align: left;">食料単位（初期人口の年間需要の2年分）</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">保存損失率
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>λ</mi><annotation encoding="application/x-tex">\lambda</annotation></semantics></math></td>
+<td style="text-align: right;">0.10</td>
+<td style="text-align: left;">/年</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">人口増加係数
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math></td>
+<td style="text-align: right;">0.012</td>
+<td style="text-align: left;">/年</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">食料不足係数
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>m</mi><annotation encoding="application/x-tex">m</annotation></semantics></math></td>
+<td style="text-align: right;">0.09</td>
+<td style="text-align: left;">/年</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">水田基盤劣化率
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>δ</mi><annotation encoding="application/x-tex">\delta</annotation></semantics></math></td>
+<td style="text-align: right;">0.025</td>
+<td style="text-align: left;">/年</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">水田投資効率
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>α</mi><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></td>
+<td style="text-align: right;">0.18</td>
+<td style="text-align: left;">基盤指標／労働単位（非線形）</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">水田基盤上限
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>K</mi><mo>max</mo></msub><annotation encoding="application/x-tex">K_{\max}</annotation></semantics></math></td>
+<td style="text-align: right;">200</td>
+<td style="text-align: left;">仮想指標</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">稲作の能力制約切片／傾き</td>
+<td style="text-align: right;">20／1.5</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>B</mi><mrow><mi>r</mi><mo>,</mo><mi>t</mi></mrow></msub><mo>=</mo><mn>20</mn><mo>+</mo><mn>1.5</mn><msub><mi>K</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">B_{r,t}=20+1.5K_t</annotation></semantics></math></td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">生業の基準生産性
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>Y</mi><mi>h</mi></msub><mo>,</mo><msub><mi>Y</mi><mi>f</mi></msub><mo>,</mo><msub><mi>Y</mi><mi>r</mi></msub></mrow><annotation encoding="application/x-tex">Y_h,Y_f,Y_r</annotation></semantics></math></td>
+<td style="text-align: right;">2.35／2.20／3.50</td>
+<td style="text-align: left;">食料／労働単位</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">狩猟・採集／漁労の能力制約</td>
+<td style="text-align: right;">65／70</td>
+<td style="text-align: left;">労働単位</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">年降水量の対数標準偏差
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mi>P</mi></msub><annotation encoding="application/x-tex">\sigma_P</annotation></semantics></math></td>
+<td style="text-align: right;">0.27</td>
+<td style="text-align: left;">無次元</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">生育期降水割合の標準偏差</td>
+<td style="text-align: right;">0.115</td>
+<td style="text-align: left;">無次元</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">生業固有の対数標準偏差</td>
+<td style="text-align: right;">0.12／0.16／0.14</td>
+<td style="text-align: left;">狩猟・採集／漁労／稲作</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">初期生業配分</td>
+<td style="text-align: right;">40%／40%／20%</td>
+<td style="text-align: left;">狩猟・採集／漁労／水田稲作</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">初期稲作整備率</td>
+<td style="text-align: right;">20%</td>
+<td style="text-align: left;">稲作に配分した労働力のうち</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">気候変化幅</td>
+<td style="text-align: right;">±30%</td>
+<td style="text-align: left;">乾燥化／湿潤化モード</td>
+</tr>
+</tbody>
+</table></div>
+<p>基準生産性や降水応答、人口増加率などは、試作版の挙動を確認するために調整した<strong>人工的な値</strong>です。たとえば水田投資効率は初期検討の0.05から0.18に変更されています。縄文・弥生時代のデータで校正した値ではありません。</p>
+<h3 id="model-section-8">8.
+結果の指標と「よい選択」の考え方</h3>
+<ul>
+<li><strong>最終人口</strong>：最後にどれだけの人口を維持しているか。</li>
+<li><strong>食料不足年数</strong>：需要に対し、わずかでも食料が不足した年の数。</li>
+<li><strong>10%以上の食料不足年数</strong>：不足が比較的大きかった年の数。</li>
+<li><strong>最大食料不足率</strong>：最も深刻な年の不足量／必要食料量。</li>
+<li><strong>最大年間人口減少率</strong>：各年の人口減少率のうち最大値。</li>
+<li><strong>人口・備蓄・水田基盤の推移</strong>：途中経過と将来への影響を確認する。</li>
+</ul>
+<p><strong>総合得点や一つの「正解」はありません。</strong>
+人口を増やす、深刻な不足を避ける、変動を抑えるなど、何を重視するかによって望ましい戦略が変わるかを議論します。同じシードで戦略を比較する際は、未来を知った後で選び直すことと、未知の未来に向けて意思決定したことを区別します。</p>
+<h3 id="model-section-9">9.
+単純化している点・批判的に検討すべき点</h3>
+<ol type="1">
+<li><strong>人口＝労働力</strong>：年齢構成、性別、技能、労働分担を考慮しません。</li>
+<li><strong>自然資源の動態</strong>：狩猟・採集や漁労の資源量を状態変数として持たず、労働投入の逓減だけで制約します。</li>
+<li><strong>水田と社会制度</strong>：水田面積、用水・土地の権利、共同労働、管理者や階層差は単一の
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>K</mi><mi>t</mi></msub><annotation encoding="application/x-tex">K_t</annotation></semantics></math>
+に集約・省略しています。</li>
+<li><strong>食料の同一視</strong>：異なる生業の生産物を共通の食料単位に換算し、栄養・保存性・季節ごとの収穫を区別しません。</li>
+<li><strong>貯蔵容量</strong>：備蓄容量は人口が増えても固定され、貯蔵施設への新規投資もできません。</li>
+<li><strong>人口変動の原因</strong>：出生・死亡・移住・疾病を分けず、食料充足率のみで説明します。</li>
+<li><strong>降水応答</strong>：生業別収量を年・生育期降水量の山型関数で表すのは学習用の仮定です。気温、海況、土壌、病害、技術などは含みません。</li>
+<li><strong>共通する社会的ショック</strong>：疫病、紛争、交易停止など、複数生業に共通する降水以外のショックは含みません。</li>
+<li><strong>過去の情報の表現</strong>：過去の気候経験を降水量比のグラフとして可視化していますが、先史社会に数値の観測記録があったという意味ではありません。</li>
+<li><strong>考古学的な解釈</strong>：コミュニケーション、儀礼、集団間の関係、所有・権力など、縄文・弥生社会の理解に重要な要素を十分に扱っていません。モデルだけで歴史を説明することはできません。</li>
+</ol>
+<p><strong>考察の問い</strong>：ゲーム内で望ましい戦略は何によって決まりましたか。その結論はパラメータを変えても成立しますか。実際の縄文・弥生社会について論じるには、どのような考古資料や解釈がさらに必要でしょうか。</p>
+<h3 id="model-section-10">10. 参考文献と位置づけ</h3>
+<ul>
+<li>Kuil, L. et al. (2016). <em>Conceptualizing socio-hydrological
+drought processes: The case of the Maya collapse.</em> <em>Water
+Resources Research</em>, 52, 6222–6242. <a href="https://doi.org/10.1002/2015WR018298">DOI:
+10.1002/2015WR018298</a></li>
+<li>Mizoguchi (2020). <em>Making Sense of Material Culture
+Transformation: A Critical Long-Term Perspective from Jomon- and
+Yayoi-Period Japan.</em> <em>Journal of World Prehistory</em>. <a href="https://doi.org/10.1007/s10963-020-09138-0">DOI:
+10.1007/s10963-020-09138-0</a></li>
+</ul>
+<p>これらは<strong>考え方の参考文献</strong>です。ゲームの関数形や数値パラメータを論文から転用したものではありません。</p>
+
+</article>
       </div>
     </details>
   </main>
